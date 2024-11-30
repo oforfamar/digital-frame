@@ -11,7 +11,7 @@ echo "Creating the target directory and downloading the slideshow script"
 mkdir -p /home/$CURRENT_USER/Documents/slideshow
 
 # Download start.sh to the target directory
-wget -O /home/$CURRENT_USER/Documents/slideshow/start.sh https://raw.githubusercontent.com/oforfamar/digital-frame/blob/main/start.sh
+wget -O /home/$CURRENT_USER/Documents/slideshow/start.sh https://raw.githubusercontent.com/oforfamar/digital-frame/refs/heads/main/start.sh
 
 # Make the downloaded script executable
 chmod +x /home/$CURRENT_USER/Documents/slideshow/start.sh
