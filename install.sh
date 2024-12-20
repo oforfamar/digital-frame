@@ -2,19 +2,23 @@
 
 CURRENT_USER=$(whoami)
 
-echo "Upgrading packages and installing feh"
-sudo apt update && sudo apt upgrade -y && sudo apt install feh -y
+echo "Upgrading packages and installing feh and ddcutil"
+sudo apt update && sudo apt upgrade -y && sudo apt install feh ddcutil -y
 
 echo "Creating the target directory and downloading the slideshow script"
 
 # Create the target directory if it doesn't exist
 mkdir -p /home/$CURRENT_USER/Documents/slideshow
 
-# Download start.sh to the target directory
-wget -O /home/$CURRENT_USER/Documents/slideshow/start.sh https://raw.githubusercontent.com/oforfamar/digital-frame/refs/heads/main/start.sh
+# Array of scripts to download
+scripts=("start.sh" "brightness_day.sh", "brightness_night.sh")
 
-# Make the downloaded script executable
-chmod +x /home/$CURRENT_USER/Documents/slideshow/start.sh
+# Loop over the array and download each script
+for script in "${scripts[@]}"; do
+  wget -O /home/$CURRENT_USER/Documents/slideshow/$script https://raw.githubusercontent.com/oforfamar/digital-frame/refs/heads/main/$script
+  # Make the downloaded script executable
+  chmod +x /home/$CURRENT_USER/Documents/slideshow/$script
+done
 
 echo "Creating the autostart .desktop file for the current user"
 
