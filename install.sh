@@ -11,7 +11,7 @@ echo "Creating the target directory and downloading the slideshow script"
 mkdir -p /home/$CURRENT_USER/Documents/slideshow
 
 # Array of scripts to download
-scripts=("start.sh" "brightness_day.sh", "brightness_night.sh")
+scripts=("start.sh")
 
 # Loop over the array and download each script
 for script in "${scripts[@]}"; do
