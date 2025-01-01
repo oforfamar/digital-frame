@@ -13,14 +13,3 @@ Execute the command below in a terminal to install the slideshow
 ```bash
 wget -O - https://raw.githubusercontent.com/oforfamar/digital-frame/refs/heads/main/install.sh | bash
 ```
-
-## Brightness crons
-
-The scripts have been downloaded and made executables. You can make use of them using a cron:
-
-```bash
-crontab -e
-
-0 7 * * * /home/$CURRENT_USER/Documents/slideshow/brightness_day.sh
-0 22 * * * /home/$CURRENT_USER/Documents/slideshow/brightness_night.sh
-```
