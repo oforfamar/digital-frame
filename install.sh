@@ -2,8 +2,8 @@
 
 CURRENT_USER=$(whoami)
 
-echo "Upgrading packages and installing feh and ddcutil"
-sudo apt update && sudo apt upgrade -y && sudo apt install feh ddcutil -y
+echo "Upgrading packages and installing feh"
+sudo apt update && sudo apt upgrade -y && sudo apt install feh -y
 
 echo "Creating the target directory and downloading the slideshow script"
 
@@ -19,6 +19,9 @@ for script in "${scripts[@]}"; do
   # Make the downloaded script executable
   chmod +x /home/$CURRENT_USER/Documents/slideshow/$script
 done
+
+# Download the black.jpg file
+wget -O /home/$CURRENT_USER/Documents/slideshow/black.jpg https://raw.githubusercontent.com/oforfamar/digital-frame/refs/heads/main/black.jpg
 
 echo "Creating the autostart .desktop file for the current user"
 
