@@ -21,16 +21,18 @@ SLIDE_SECONDS="${SLIDE_SECONDS:-30}"
 #   -z            random order
 #   -Z            auto-zoom to fit
 #   -F            fullscreen
-#   --auto-rotate honour EXIF orientation
 #   --hide-pointer hide the mouse cursor
 #   whole-image fit (no crop) → portraits get pillarboxed
+#
+# EXIF auto-rotation is handled transparently by Imlib2 (>=1.7.5) on Pi OS
+# Bookworm, so feh's --auto-rotate is intentionally omitted (it's a no-op there
+# and only emits a warning).
 feh_opts=(
   -r
   -D"${SLIDE_SECONDS}"
   -z
   -Z
   -F
-  --auto-rotate
   --hide-pointer
 )
 
