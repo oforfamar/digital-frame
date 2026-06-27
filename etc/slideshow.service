@@ -1,0 +1,30 @@
+[Unit]
+Description=Digital photo frame slideshow (cage + feh)
+Documentation=https://github.com/oforfamar/digital-frame
+# Take over tty1 from the login getty and wait for a usable seat.
+After=systemd-user-sessions.service getty@tty1.service
+Conflicts=getty@tty1.service
+# Never give up restarting (disable the default 5-crashes-in-10s start limit),
+# so feh/cage always recover with no human action.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cage -- /usr/local/bin/slideshow
+Restart=always
+RestartSec=2
+User=mihai
+# PAMName=login + a controlling tty give the service a proper logind seat,
+# so cage can open the DRM/input devices and XDG_RUNTIME_DIR is set up.
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+# Load optional overrides (e.g. PHOTO_DIR). The leading '-' makes it optional.
+EnvironmentFile=-/etc/slideshow.conf
+
+[Install]
+WantedBy=multi-user.target

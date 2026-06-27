@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# slideshow — launches feh fullscreen inside the cage Wayland kiosk.
+#
+# Invoked by the systemd unit as:  cage -- /usr/local/bin/slideshow
+# feh is an X11 app; cage provides Xwayland and sets DISPLAY for us.
+#
+# Slice 1 reads from a fixed local folder. USB live-read (/media/frame)
+# arrives in slice 2; override PHOTO_DIR via /etc/slideshow.conf to migrate.
+
+set -euo pipefail
+
+# Config (overridable via the service's EnvironmentFile=/etc/slideshow.conf)
+PHOTO_DIR="${PHOTO_DIR:-$HOME/Pictures}"
+FALLBACK_IMAGE="${FALLBACK_IMAGE:-/usr/local/share/slideshow/black.jpg}"
+SLIDE_SECONDS="${SLIDE_SECONDS:-30}"
+
+# feh flags (per spec):
+#   -r            recurse into subfolders
+#   -D<n>         n seconds per photo
+#   -z            random order
+#   -Z            auto-zoom to fit
+#   -F            fullscreen
+#   --hide-pointer hide the mouse cursor
+#   whole-image fit (no crop) → portraits get pillarboxed
+#
+# EXIF auto-rotation is handled transparently by Imlib2 (>=1.7.5) on Pi OS
+# Bookworm, so feh's --auto-rotate is intentionally omitted (it's a no-op there
+# and only emits a warning).
+feh_opts=(
+  -r
+  -D"${SLIDE_SECONDS}"
+  -z
+  -Z
+  -F
+  --hide-pointer
+)
+
+# Does the photo dir hold at least one image? (find exits 0 even when empty,
+# so gate on grep.) If not, fall back to a static image rather than letting
+# feh exit immediately and crash-loop the service. A proper "no photos"
+# card arrives in slice 3.
+has_images() {
+  [ -d "$PHOTO_DIR" ] && \
+    find "$PHOTO_DIR" -type f \
+      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
+      -print -quit 2>/dev/null | grep -q .
+}
+
+if has_images; then
+  exec feh "${feh_opts[@]}" "$PHOTO_DIR"
+else
+  echo "slideshow: no images in '$PHOTO_DIR', showing fallback image" >&2
+  exec feh -F --hide-pointer "$FALLBACK_IMAGE"
+fi
