@@ -1,0 +1,7 @@
+[Unit]
+Description=Unmount USB stick %i from the photo frame
+# %i is the kernel device name (e.g. sda1) passed by the udev rule.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/frame-usb umount %i

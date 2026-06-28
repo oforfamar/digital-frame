@@ -5,13 +5,14 @@
 # Invoked by the systemd unit as:  cage -- /usr/local/bin/slideshow
 # feh is an X11 app; cage provides Xwayland and sets DISPLAY for us.
 #
-# Slice 1 reads from a fixed local folder. USB live-read (/media/frame)
-# arrives in slice 2; override PHOTO_DIR via /etc/slideshow.conf to migrate.
+# Slice 2 reads live off a USB stick mounted read-only at /media/frame by the
+# frame-usb helper (udev). With no stick inserted that dir is missing/empty and
+# we show the fallback image. Override PHOTO_DIR via /etc/slideshow.conf.
 
 set -euo pipefail
 
 # Config (overridable via the service's EnvironmentFile=/etc/slideshow.conf)
-PHOTO_DIR="${PHOTO_DIR:-$HOME/Pictures}"
+PHOTO_DIR="${PHOTO_DIR:-/media/frame}"
 FALLBACK_IMAGE="${FALLBACK_IMAGE:-/usr/local/share/slideshow/black.jpg}"
 SLIDE_SECONDS="${SLIDE_SECONDS:-30}"
 
@@ -40,11 +41,16 @@ feh_opts=(
 # so gate on grep.) If not, fall back to a static image rather than letting
 # feh exit immediately and crash-loop the service. A proper "no photos"
 # card arrives in slice 3.
+# HEIC/HEIF are included because Mac-curated photos are commonly HEIC and feh
+# decodes them natively on the Pi; without them a HEIC-only stick would wrongly
+# fall back to the "no photos" image. feh itself globs the dir, so this only
+# gates the fallback, not which files get shown.
 has_images() {
   [ -d "$PHOTO_DIR" ] && \
     find "$PHOTO_DIR" -type f \
       \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
-         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
+         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \
+         -o -iname '*.heic' -o -iname '*.heif' \) \
       -print -quit 2>/dev/null | grep -q .
 }
 

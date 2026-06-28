@@ -1,0 +1,13 @@
+# Digital photo frame — live USB read.
+#
+# Mount any inserted USB stick that carries a filesystem read-only at
+# /media/frame and drive the slideshow off it; unmount on removal. We match on
+# ID_FS_USAGE=="filesystem" (set by blkid) so this works for both whole-disk
+# filesystems (sda) and partitions (sda1), and ignores partition-table parents.
+#
+# The actual work is handed to systemd template units (frame-usb-{mount,umount}
+# @<dev>.service) — udev kills its own long-running children, so mounting and
+# restarting the slideshow from a service is the reliable path.
+
+ACTION=="add",    SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="frame-usb-mount@%k.service"
+ACTION=="remove", SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="frame-usb-umount@%k.service"

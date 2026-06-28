@@ -1,0 +1,7 @@
+[Unit]
+Description=Mount USB stick %i read-only for the photo frame
+# %i is the kernel device name (e.g. sda1) passed by the udev rule.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/frame-usb mount %i
