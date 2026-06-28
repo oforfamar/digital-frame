@@ -5,9 +5,16 @@
 # ID_FS_USAGE=="filesystem" (set by blkid) so this works for both whole-disk
 # filesystems (sda) and partitions (sda1), and ignores partition-table parents.
 #
+# We skip the EFI System Partition (GPT type c12a7328-…): Mac-formatted exFAT
+# sticks use a GUID partition map and carry a small, empty EFI vfat partition
+# alongside the real data partition. Without this guard both partitions race to
+# mount at /media/frame and the empty EFI one can win, hiding the photos. The
+# guard also matches MBR/single-partition sticks (no ID_PART_ENTRY_TYPE set →
+# the != still passes), so plain sticks keep working.
+#
 # The actual work is handed to systemd template units (frame-usb-{mount,umount}
 # @<dev>.service) — udev kills its own long-running children, so mounting and
 # restarting the slideshow from a service is the reliable path.
 
-ACTION=="add",    SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="frame-usb-mount@%k.service"
-ACTION=="remove", SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="frame-usb-umount@%k.service"
+ACTION=="add",    SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_PART_ENTRY_TYPE}!="c12a7328-f81f-11d2-ba4b-00a0c93ec93b", TAG+="systemd", ENV{SYSTEMD_WANTS}+="frame-usb-mount@%k.service"
+ACTION=="remove", SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_PART_ENTRY_TYPE}!="c12a7328-f81f-11d2-ba4b-00a0c93ec93b", TAG+="systemd", ENV{SYSTEMD_WANTS}+="frame-usb-umount@%k.service"
