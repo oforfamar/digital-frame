@@ -41,11 +41,16 @@ require_user() {
 
 # --- packages ---------------------------------------------------------------
 install_packages() {
-  echo "==> Installing packages (cage, feh, xwayland, exfatprogs)"
+  echo "==> Installing packages (cage, feh, xwayland, exfatprogs, libheif1)"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   # exfatprogs: the curated sticks are exFAT (prepared on a MacBook).
-  apt-get install -y --no-install-recommends cage feh xwayland exfatprogs
+  # libheif1: iPhone photos are HEIC. feh/imlib2 decode them natively via
+  # imlib2's HEIF loader, which dlopens libheif at runtime — verified on-device
+  # with multiple sticks, so no conversion-cache fallback is needed (issue #5).
+  # Declared explicitly so a fresh flash keeps HEIC support even if feh stops
+  # pulling libheif in transitively.
+  apt-get install -y --no-install-recommends cage feh xwayland exfatprogs libheif1
 }
 
 # --- program + assets -------------------------------------------------------

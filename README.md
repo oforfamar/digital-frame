@@ -17,6 +17,9 @@ self-healing photo slideshow:
   to defeat the slow/late-monitor EDID handshake race, with a quiet boot.
 - feh shows photos with whole-image fit (portraits pillarboxed, no crop) and EXIF
   auto-rotation.
+- **HEIC/HEIF** (iPhone photos) display natively — `libheif1` is installed and
+  imlib2's HEIF loader decodes them straight off the read-only stick, so parents
+  change nothing. RAW (`.CR2`/`.NEF`) is not supported.
 - **Live USB read:** plug in a stick and photos appear. A udev rule mounts any
   inserted USB filesystem **read-only** at `/media/frame`
   (`ro,nosuid,nodev,noexec,uid=1000,gid=1000`) and restarts `slideshow.service`,
