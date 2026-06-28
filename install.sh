@@ -56,10 +56,10 @@ install_files() {
   install -D -m 0755 "$SCRIPT_DIR/bin/frame-usb" /usr/local/sbin/frame-usb
 
   install -d -m 0755 "$SHARE_DIR"
+  # Romanian no-photos card: the slideshow's primary fallback (slice 3).
+  install -m 0644 "$SCRIPT_DIR/assets/fallback.png" "$SHARE_DIR/fallback.png"
+  # black.jpg is the last-resort fallback if the card is ever missing.
   install -m 0644 "$SCRIPT_DIR/assets/black.jpg" "$SHARE_DIR/black.jpg"
-  # Romanian fallback card lands here for a later slice; ship it now if present.
-  [ -f "$SCRIPT_DIR/assets/fallback.png" ] && \
-    install -m 0644 "$SCRIPT_DIR/assets/fallback.png" "$SHARE_DIR/fallback.png"
 
   # Photo source for this slice: the USB mountpoint. Create it empty so the
   # slideshow shows the fallback (not a crash) when no stick is inserted.
