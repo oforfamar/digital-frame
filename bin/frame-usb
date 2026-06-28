@@ -62,7 +62,9 @@ dev_is_mounted() {
 # we record what actually shows up in the field to drive later slices.
 log_extensions() {
   local exts
-  exts="$(find "$MOUNTPOINT" -type f -name '*.*' 2>/dev/null \
+  # Skip hidden dot-paths: Mac sticks carry .Spotlight-V100/.fseventsd index
+  # dirs whose files otherwise flood the log with junk "extensions".
+  exts="$(find "$MOUNTPOINT" -type f -not -path '*/.*' -name '*.*' 2>/dev/null \
     | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]' | sort -u | paste -sd, -)"
   if [ -n "$exts" ]; then
     log "file extensions on $devname: $exts"
