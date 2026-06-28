@@ -1,0 +1,110 @@
+#!/bin/bash
+#
+# frame-usb — mount/unmount an inserted USB stick read-only for the slideshow.
+#
+# Invoked by the systemd template units that a udev rule starts on USB
+# add/remove (see etc/99-frame-usb.rules):
+#
+#   frame-usb mount  <kernel-name>   (e.g. sda1)
+#   frame-usb umount <kernel-name>
+#
+# The stick is mounted READ-ONLY at a fixed mountpoint so it can be pulled at
+# any time without corruption and the Pi never writes to it (or to its own
+# flash) during a normal run. feh reads its photo list once at startup, so we
+# bounce slideshow.service to pick up a swapped stick live, with no reboot.
+#
+# Ordering matters: a running feh holds the stick open, which turns umount into
+# a *lazy* detach that never completes (the new feh re-opens the same mount),
+# leaving stale mounts stacked on the mountpoint. So we STOP the slideshow
+# first, unmount/mount with nothing holding the mountpoint, then START it again.
+#
+# We deliberately do the work in a systemd service rather than directly in the
+# udev rule: udev kills its own long-running children, which would race the
+# mount and the service restart.
+
+set -euo pipefail
+
+MOUNTPOINT="/media/frame"
+# The frame user/group own the mounted files so feh (running as that user) can
+# read them. exFAT/vfat have no real ownership, so the kernel synthesises it
+# from these uid=/gid= mount options.
+FRAME_UID=1000
+FRAME_GID=1000
+
+action="${1:?usage: frame-usb mount|umount <device>}"
+devname="${2:?usage: frame-usb mount|umount <device>}"
+dev="/dev/$devname"
+
+# Log to journald (under the 'frame-usb' tag) and to stderr for the service log.
+log() { logger -t frame-usb -- "$*"; echo "frame-usb: $*" >&2; }
+
+stop_slideshow()  { systemctl stop  slideshow.service || log "slideshow stop failed"; }
+start_slideshow() { systemctl start slideshow.service || log "slideshow start failed"; }
+
+# Unmount every filesystem stacked at the mountpoint until it is clear. With the
+# slideshow stopped nothing holds it, so a plain umount succeeds; the lazy
+# fallback and the iteration cap guard against any straggler.
+drain_mountpoint() {
+  local i=0
+  while mountpoint -q "$MOUNTPOINT"; do
+    umount "$MOUNTPOINT" 2>/dev/null || umount -l "$MOUNTPOINT" || break
+    i=$((i + 1)); [ "$i" -ge 10 ] && break
+  done
+}
+
+# Is this device currently mounted at the mountpoint? (handles stacked mounts)
+dev_is_mounted() {
+  findmnt -rn -o SOURCE "$MOUNTPOINT" 2>/dev/null | grep -qx "$dev"
+}
+
+# Log the distinct image-ish file extensions on the stick to journald. The real
+# formats are unknown (photos are curated on a MacBook → likely HEIC/JPEG), so
+# we record what actually shows up in the field to drive later slices.
+log_extensions() {
+  local exts
+  # Skip hidden dot-paths: Mac sticks carry .Spotlight-V100/.fseventsd index
+  # dirs whose files otherwise flood the log with junk "extensions".
+  exts="$(find "$MOUNTPOINT" -type f -not -path '*/.*' -name '*.*' 2>/dev/null \
+    | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]' | sort -u | paste -sd, -)"
+  if [ -n "$exts" ]; then
+    log "file extensions on $devname: $exts"
+  else
+    log "no files found on $devname"
+  fi
+}
+
+case "$action" in
+  mount)
+    # Stop feh first so the old stick (if any) unmounts cleanly instead of
+    # leaking a stacked lazy mount, then replace it with the new one.
+    stop_slideshow
+    drain_mountpoint
+    mkdir -p "$MOUNTPOINT"
+    # uid=/gid= are exFAT/vfat options; an unexpected non-exFAT stick (the rule
+    # matches any filesystem) would fail here, so log it rather than dying mute
+    # under set -e.
+    if ! mount -o "ro,nosuid,nodev,noexec,uid=${FRAME_UID},gid=${FRAME_GID}" \
+        "$dev" "$MOUNTPOINT"; then
+      log "mount of $dev at $MOUNTPOINT failed (not exFAT/vfat?)"
+      start_slideshow    # bring the frame back (fallback) rather than leave it dark
+      exit 1
+    fi
+    log "mounted $dev read-only at $MOUNTPOINT"
+    log_extensions
+    start_slideshow
+    ;;
+  umount)
+    # Only act if THIS device is the one mounted, so removing an unrelated USB
+    # filesystem never tears down the live stick or spuriously restarts feh.
+    if dev_is_mounted; then
+      stop_slideshow
+      drain_mountpoint
+      log "unmounted $MOUNTPOINT (stick $devname removed)"
+      start_slideshow
+    fi
+    ;;
+  *)
+    log "unknown action: $action"
+    exit 1
+    ;;
+esac

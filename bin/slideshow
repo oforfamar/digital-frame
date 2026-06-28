@@ -5,18 +5,19 @@
 # Invoked by the systemd unit as:  cage -- /usr/local/bin/slideshow
 # feh is an X11 app; cage provides Xwayland and sets DISPLAY for us.
 #
-# Slice 1 reads from a fixed local folder. USB live-read (/media/frame)
-# arrives in slice 2; override PHOTO_DIR via /etc/slideshow.conf to migrate.
+# Slice 2 reads live off a USB stick mounted read-only at /media/frame by the
+# frame-usb helper (udev). With no stick inserted that dir is missing/empty and
+# we show the fallback image. Override PHOTO_DIR via /etc/slideshow.conf.
 
 set -euo pipefail
 
 # Config (overridable via the service's EnvironmentFile=/etc/slideshow.conf)
-PHOTO_DIR="${PHOTO_DIR:-$HOME/Pictures}"
+PHOTO_DIR="${PHOTO_DIR:-/media/frame}"
 FALLBACK_IMAGE="${FALLBACK_IMAGE:-/usr/local/share/slideshow/black.jpg}"
 SLIDE_SECONDS="${SLIDE_SECONDS:-30}"
 
 # feh flags (per spec):
-#   -r            recurse into subfolders
+#   -f <file>     read the photo list from a file/fd (we build it, see below)
 #   -D<n>         n seconds per photo
 #   -z            random order
 #   -Z            auto-zoom to fit
@@ -28,7 +29,6 @@ SLIDE_SECONDS="${SLIDE_SECONDS:-30}"
 # Bookworm, so feh's --auto-rotate is intentionally omitted (it's a no-op there
 # and only emits a warning).
 feh_opts=(
-  -r
   -D"${SLIDE_SECONDS}"
   -z
   -Z
@@ -36,20 +36,23 @@ feh_opts=(
   --hide-pointer
 )
 
-# Does the photo dir hold at least one image? (find exits 0 even when empty,
-# so gate on grep.) If not, fall back to a static image rather than letting
-# feh exit immediately and crash-loop the service. A proper "no photos"
-# card arrives in slice 3.
-has_images() {
-  [ -d "$PHOTO_DIR" ] && \
-    find "$PHOTO_DIR" -type f \
-      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
-         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
-      -print -quit 2>/dev/null | grep -q .
+# Build feh's photo list ourselves instead of using `feh -r`, so we can:
+#   - exclude hidden dot-paths — Mac sticks carry .Spotlight-V100/.fseventsd
+#     dirs full of non-image junk that feh -r would trawl and warn on;
+#   - restrict to image types feh handles. HEIC/HEIF are included because
+#     Mac-curated photos are commonly HEIC and feh decodes them natively here.
+list_images() {
+  find "$PHOTO_DIR" -type f -not -path '*/.*' \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+       -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \
+       -o -iname '*.heic' -o -iname '*.heif' \) 2>/dev/null
 }
 
-if has_images; then
-  exec feh "${feh_opts[@]}" "$PHOTO_DIR"
+# If the dir holds at least one image, show them; otherwise fall back to a
+# static image rather than letting feh exit immediately and crash-loop the
+# service. (A proper "no photos" card arrives in a later slice.)
+if [ -d "$PHOTO_DIR" ] && [ -n "$(list_images | head -n1)" ]; then
+  exec feh "${feh_opts[@]}" -f <(list_images)
 else
   echo "slideshow: no images in '$PHOTO_DIR', showing fallback image" >&2
   exec feh -F --hide-pointer "$FALLBACK_IMAGE"

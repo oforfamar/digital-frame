@@ -13,6 +13,11 @@ Type=simple
 ExecStart=/usr/bin/cage -- /usr/local/bin/slideshow
 Restart=always
 RestartSec=2
+# Bound `systemctl stop`: cage/feh can ignore SIGTERM, so SIGKILL leftover
+# children fast (KillMode=mixed) and cap the wait at 10s instead of the 90s
+# default — a manual stop must never hang the box.
+KillMode=mixed
+TimeoutStopSec=10
 User=mihai
 # PAMName=login + a controlling tty give the service a proper logind seat,
 # so cage can open the DRM/input devices and XDG_RUNTIME_DIR is set up.
