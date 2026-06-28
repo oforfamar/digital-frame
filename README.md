@@ -31,6 +31,13 @@ self-healing photo slideshow:
 
 The sticks are exFAT (curated on a MacBook), so `exfatprogs` is installed.
 
+- **Remote management:** `rpi-connect-lite` gives a remote shell over the
+  Raspberry Pi Connect relay (the primary lifeline once the frame is at the
+  parents' home, works behind NAT), with **SSH** enabled as a local-network
+  fallback. `unattended-upgrades` is **disabled** — a remote, unattended
+  kernel/mesa/cage upgrade could brick the display, so updates stay manual and
+  deliberate.
+
 ### Repo layout
 
 ```
@@ -56,10 +63,27 @@ sudo reboot
 
 The bootstrap clones the repo to `~/digital-frame` and runs `sudo ./install.sh`.
 
-### Updating
+### Remote management
+
+One-time, after the first install, link the frame to Raspberry Pi Connect.
+Run **as the frame user** (over SSH or a local console):
 
 ```bash
-cd ~/digital-frame && git pull && sudo ./install.sh
+rpi-connect signin     # prints a URL + code; approve it in a browser
+rpi-connect on         # enable the remote-shell service
+rpi-connect status     # confirm it is signed in and connected
+```
+
+From then on the frame is reachable at <https://connect.raspberrypi.com>
+(remote shell) or by SSH on the local network. `enable-linger` is set by the
+installer so Connect comes up at boot without an interactive login.
+
+### Updating
+
+The deliberate, manual flow (run over Connect or SSH; reboot to verify):
+
+```bash
+cd ~/digital-frame && git pull && sudo ./install.sh && sudo reboot
 ```
 
 `install.sh` is idempotent, so re-running it is always safe.

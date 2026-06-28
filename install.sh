@@ -188,6 +188,46 @@ configure_boot() {
   fi
 }
 
+# --- remote ops: rpi-connect-lite (primary) + SSH (fallback) ----------------
+install_remote_ops() {
+  echo "==> Installing remote management (rpi-connect-lite + SSH)"
+  export DEBIAN_FRONTEND=noninteractive
+  # rpi-connect-lite: remote shell over the Raspberry Pi Connect relay — the
+  # primary lifeline once the frame is at the parents' home (works behind NAT,
+  # no port-forwarding). The 'lite' variant is shell-only (no screen sharing).
+  apt-get install -y --no-install-recommends rpi-connect-lite openssh-server
+
+  # SSH: local-network fallback if Connect is ever unreachable.
+  systemctl enable --now ssh
+
+  # rpi-connect runs as the frame user's systemd --user service. enable-linger
+  # starts that user manager at boot so Connect can come up without an
+  # interactive login. The one-time link is manual (`rpi-connect signin` over
+  # SSH as $FRAME_USER): it needs a browser auth code we can't script. See the
+  # README "Remote management" section.
+  loginctl enable-linger "$FRAME_USER"
+}
+
+# --- disable unattended-upgrades --------------------------------------------
+disable_unattended_upgrades() {
+  echo "==> Disabling unattended-upgrades"
+  # A remote, unattended kernel/mesa/cage upgrade could brick the display, so
+  # updates stay manual & deliberate (git pull && sudo ./install.sh). Turn off
+  # the auto-upgrade machinery without removing apt itself.
+  cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+EOF
+  chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades
+
+  # Mask the service + timers so nothing re-triggers an upgrade in the
+  # background. '|| true' keeps re-runs clean when a unit is absent.
+  systemctl disable --now unattended-upgrades.service 2>/dev/null || true
+  systemctl mask unattended-upgrades.service 2>/dev/null || true
+  systemctl disable --now apt-daily-upgrade.timer apt-daily.timer 2>/dev/null || true
+  systemctl mask apt-daily-upgrade.timer apt-daily.timer 2>/dev/null || true
+}
+
 main() {
   require_root
   require_user
@@ -196,6 +236,8 @@ main() {
   install_config
   install_service
   install_usb
+  install_remote_ops
+  disable_unattended_upgrades
   configure_boot
   echo
   echo "install: done. Reboot to start the slideshow:  sudo reboot"
