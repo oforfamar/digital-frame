@@ -7,14 +7,28 @@
 #
 # Slice 2 reads live off a USB stick mounted read-only at /media/frame by the
 # frame-usb helper (udev). With no stick inserted that dir is missing/empty and
-# we show the fallback image. Override PHOTO_DIR via /etc/slideshow.conf.
+# we show the fallback card. Override PHOTO_DIR via /etc/slideshow.conf.
+#
+# Slice 3 (readiness gate): there is always a usable display because cage starts
+# us only once Xwayland is up. So we never show a black screen — until usable
+# images appear at PHOTO_DIR we hold on the Romanian fallback card, then swap to
+# the live slideshow the moment photos show up. This covers the cold-boot window
+# before the stick is mounted, an empty/absent stick, and a pulled stick (the
+# udev umount restarts us, so we land back on the card).
 
 set -euo pipefail
 
+SHARE_DIR="/usr/local/share/slideshow"
+
 # Config (overridable via the service's EnvironmentFile=/etc/slideshow.conf)
 PHOTO_DIR="${PHOTO_DIR:-/media/frame}"
-FALLBACK_IMAGE="${FALLBACK_IMAGE:-/usr/local/share/slideshow/black.jpg}"
+# The Romanian no-photos card. If it is somehow missing, fall back to the plain
+# black card rather than letting feh exit and leave the screen dark.
+FALLBACK_IMAGE="${FALLBACK_IMAGE:-$SHARE_DIR/fallback.png}"
+[ -f "$FALLBACK_IMAGE" ] || FALLBACK_IMAGE="$SHARE_DIR/black.jpg"
 SLIDE_SECONDS="${SLIDE_SECONDS:-30}"
+# How often the readiness gate re-checks PHOTO_DIR for usable images.
+POLL_SECONDS="${POLL_SECONDS:-3}"
 
 # feh flags (per spec):
 #   -f <file>     read the photo list from a file/fd (we build it, see below)
@@ -48,12 +62,41 @@ list_images() {
        -o -iname '*.heic' -o -iname '*.heif' \) 2>/dev/null
 }
 
-# If the dir holds at least one image, show them; otherwise fall back to a
-# static image rather than letting feh exit immediately and crash-loop the
-# service. (A proper "no photos" card arrives in a later slice.)
-if [ -d "$PHOTO_DIR" ] && [ -n "$(list_images | head -n1)" ]; then
-  exec feh "${feh_opts[@]}" -f <(list_images)
-else
-  echo "slideshow: no images in '$PHOTO_DIR', showing fallback image" >&2
-  exec feh -F --hide-pointer "$FALLBACK_IMAGE"
-fi
+has_images() { [ -d "$PHOTO_DIR" ] && [ -n "$(list_images | head -n1)" ]; }
+
+# The fallback card runs as a background feh we own, so we can replace it with
+# the slideshow the instant photos appear. Track its pid; (re)start it only when
+# it isn't already up, so we don't flicker the card every poll.
+fallback_pid=""
+show_fallback() {
+  if [ -n "$fallback_pid" ]; then
+    kill -0 "$fallback_pid" 2>/dev/null && return  # card still up, no flicker
+    wait "$fallback_pid" 2>/dev/null || true       # reap a card feh that exited
+  fi
+  echo "slideshow: no images in '$PHOTO_DIR' yet, showing fallback card" >&2
+  feh -F --hide-pointer "$FALLBACK_IMAGE" &
+  fallback_pid=$!
+}
+stop_fallback() {
+  [ -n "$fallback_pid" ] || return 0
+  kill "$fallback_pid" 2>/dev/null || true
+  wait "$fallback_pid" 2>/dev/null || true
+  fallback_pid=""
+}
+# A SIGTERM from `systemctl stop` (frame-usb bounces us on stick add/remove)
+# must not orphan the background card.
+trap 'stop_fallback; exit 0' TERM INT
+
+# Readiness gate: hold on the fallback card until usable images appear, then
+# swap to the live slideshow. `exec` hands our pid to feh so a crash propagates
+# to cage/systemd and Restart=always brings the frame back.
+while true; do
+  if has_images; then
+    stop_fallback
+    exec feh "${feh_opts[@]}" -f <(list_images)
+  fi
+  show_fallback
+  # Sleep in the background and `wait` on it so a SIGTERM from `systemctl stop`
+  # runs the trap at once instead of being deferred until the sleep returns.
+  sleep "$POLL_SECONDS" & wait $!
+done
