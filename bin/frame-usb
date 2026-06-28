@@ -10,9 +10,13 @@
 #
 # The stick is mounted READ-ONLY at a fixed mountpoint so it can be pulled at
 # any time without corruption and the Pi never writes to it (or to its own
-# flash) during a normal run. After (un)mounting we restart slideshow.service:
-# feh reads its photo list once at startup, so a restart is how a swapped stick
-# is picked up live, with no reboot.
+# flash) during a normal run. feh reads its photo list once at startup, so we
+# bounce slideshow.service to pick up a swapped stick live, with no reboot.
+#
+# Ordering matters: a running feh holds the stick open, which turns umount into
+# a *lazy* detach that never completes (the new feh re-opens the same mount),
+# leaving stale mounts stacked on the mountpoint. So we STOP the slideshow
+# first, unmount/mount with nothing holding the mountpoint, then START it again.
 #
 # We deliberately do the work in a systemd service rather than directly in the
 # udev rule: udev kills its own long-running children, which would race the
@@ -34,8 +38,23 @@ dev="/dev/$devname"
 # Log to journald (under the 'frame-usb' tag) and to stderr for the service log.
 log() { logger -t frame-usb -- "$*"; echo "frame-usb: $*" >&2; }
 
-restart_slideshow() {
-  systemctl restart slideshow.service || log "slideshow restart failed"
+stop_slideshow()  { systemctl stop  slideshow.service || log "slideshow stop failed"; }
+start_slideshow() { systemctl start slideshow.service || log "slideshow start failed"; }
+
+# Unmount every filesystem stacked at the mountpoint until it is clear. With the
+# slideshow stopped nothing holds it, so a plain umount succeeds; the lazy
+# fallback and the iteration cap guard against any straggler.
+drain_mountpoint() {
+  local i=0
+  while mountpoint -q "$MOUNTPOINT"; do
+    umount "$MOUNTPOINT" 2>/dev/null || umount -l "$MOUNTPOINT" || break
+    i=$((i + 1)); [ "$i" -ge 10 ] && break
+  done
+}
+
+# Is this device currently mounted at the mountpoint? (handles stacked mounts)
+dev_is_mounted() {
+  findmnt -rn -o SOURCE "$MOUNTPOINT" 2>/dev/null | grep -qx "$dev"
 }
 
 # Log the distinct image-ish file extensions on the stick to journald. The real
@@ -54,31 +73,32 @@ log_extensions() {
 
 case "$action" in
   mount)
+    # Stop feh first so the old stick (if any) unmounts cleanly instead of
+    # leaking a stacked lazy mount, then replace it with the new one.
+    stop_slideshow
+    drain_mountpoint
     mkdir -p "$MOUNTPOINT"
-    # Replace whatever is already here (e.g. a previous stick not cleanly
-    # unmounted). Lazy umount never blocks on busy mounts (feh holds it open).
-    if mountpoint -q "$MOUNTPOINT"; then
-      umount -l "$MOUNTPOINT" || true
-    fi
     # uid=/gid= are exFAT/vfat options; an unexpected non-exFAT stick (the rule
     # matches any filesystem) would fail here, so log it rather than dying mute
     # under set -e.
     if ! mount -o "ro,nosuid,nodev,noexec,uid=${FRAME_UID},gid=${FRAME_GID}" \
         "$dev" "$MOUNTPOINT"; then
       log "mount of $dev at $MOUNTPOINT failed (not exFAT/vfat?)"
+      start_slideshow    # bring the frame back (fallback) rather than leave it dark
       exit 1
     fi
     log "mounted $dev read-only at $MOUNTPOINT"
     log_extensions
-    restart_slideshow
+    start_slideshow
     ;;
   umount)
     # Only act if THIS device is the one mounted, so removing an unrelated USB
     # filesystem never tears down the live stick or spuriously restarts feh.
-    if [ "$(findmnt -n -o SOURCE "$MOUNTPOINT" 2>/dev/null)" = "$dev" ]; then
-      umount -l "$MOUNTPOINT" || true
+    if dev_is_mounted; then
+      stop_slideshow
+      drain_mountpoint
       log "unmounted $MOUNTPOINT (stick $devname removed)"
-      restart_slideshow
+      start_slideshow
     fi
     ;;
   *)
